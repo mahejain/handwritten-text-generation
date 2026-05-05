@@ -46,7 +46,7 @@ def stitch_text(text, output_filename="output.png"):
     
     output_path = os.path.join(OUTPUT_DIR, output_filename)
     canvas.save(output_path)
-    print(f"✅ Saved: {output_path}")
+    print(f"Saved: {output_path}")
 
 if __name__ == "__main__":
     stitch_text("Hello World", "hello_world.png")

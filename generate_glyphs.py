@@ -33,7 +33,7 @@ def generate_glyphs():
         img.save(os.path.join(SAVE_DIR, filename))
         print(f"Saved: {char} → {filename}")
 
-    print("\n✅ All glyphs generated!")
+    print("\nAll glyphs generated!")
 
 if __name__ == "__main__":
     generate_glyphs()
