@@ -11,10 +11,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 class HandwritingDataset(Dataset):
-    def __init__(self, root_dir, max_images=5000):
+    def __init__(self, root_dir, max_images=8000):
         self.image_paths = []
         self.transform = transforms.Compose([
-            transforms.Resize((32, 32)),
+            transforms.Resize((64, 64)),
             transforms.ToTensor(),
             transforms.Normalize([0.5], [0.5])
         ])
@@ -40,49 +40,71 @@ class HandwritingDataset(Dataset):
             img = Image.open(self.image_paths[idx]).convert('L')
             return self.transform(img)
         except Exception:
-            return torch.zeros(1, 32, 32)
+            return torch.zeros(1, 64, 64)
 
-class Generator(nn.Module):
+class DCGenerator(nn.Module):
     def __init__(self, noise_dim=100):
-        super(Generator, self).__init__()
+        super(DCGenerator, self).__init__()
+
         self.model = nn.Sequential(
-            nn.Linear(noise_dim, 256),
-            nn.LeakyReLU(0.2),
-            nn.BatchNorm1d(256),
+            nn.ConvTranspose2d(noise_dim, 512, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(True),
 
-            nn.Linear(256, 512),
-            nn.LeakyReLU(0.2),
-            nn.BatchNorm1d(512),
+            nn.ConvTranspose2d(512, 256, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(True),
 
-            nn.Linear(512, 1024),
-            nn.LeakyReLU(0.2),
-            nn.BatchNorm1d(1024),
+            nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(True),
 
-            nn.Linear(1024, 32 * 32),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(True),
+
+            nn.ConvTranspose2d(64, 1, 4, 2, 1, bias=False),
             nn.Tanh()
         )
 
     def forward(self, x):
-        out = self.model(x)
-        return out.view(-1, 1, 32, 32)
+        x = x.view(x.size(0), x.size(1), 1, 1)
+        return self.model(x)
 
-class Discriminator(nn.Module):
+class DCDiscriminator(nn.Module):
     def __init__(self):
-        super(Discriminator, self).__init__()
+        super(DCDiscriminator, self).__init__()
+
         self.model = nn.Sequential(
-            nn.Linear(32 * 32, 512),
-            nn.LeakyReLU(0.2),
+            nn.Conv2d(1, 64, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Linear(512, 256),
-            nn.LeakyReLU(0.2),
+            nn.Conv2d(64, 128, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Linear(256, 1),
+            nn.Conv2d(128, 256, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(256, 512, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(512, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
 
     def forward(self, x):
-        x = x.view(-1, 32 * 32)
-        return self.model(x)
+        return self.model(x).view(-1, 1)
+
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
 
 def save_samples(generator, epoch, noise_dim, num_samples=8):
     generator.eval()
@@ -97,21 +119,20 @@ def save_samples(generator, epoch, noise_dim, num_samples=8):
         ax.imshow(fake_images[i], cmap='gray')
         ax.axis('off')
 
-    plt.suptitle(f"Epoch {epoch}", fontsize=10)
+    plt.suptitle(f"DCGAN Epoch {epoch}", fontsize=10)
     plt.tight_layout()
-    output_path = f"output/level4_epoch_{epoch}.png"
-    plt.savefig(output_path, dpi=100, facecolor='white')
+    output_path = f"output/dcgan_epoch_{epoch}.png"
+    plt.savefig(output_path, dpi=150, facecolor='white')
     plt.close()
     print(f"Saved samples: {output_path}")
     generator.train()
 
-
-def train_gan(generator, discriminator, dataloader, epochs=50, noise_dim=100):
+def train_dcgan(generator, discriminator, dataloader, epochs=100, noise_dim=100):
     loss_fn = nn.BCELoss()
     opt_g = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
     opt_d = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
-    print("Training GAN...")
+    print("Training DCGAN...")
 
     for epoch in range(epochs):
         for batch in dataloader:
@@ -155,17 +176,21 @@ if __name__ == "__main__":
     BATCH_SIZE = 64
     EPOCHS = 100
 
-    dataset = HandwritingDataset('archive/words', max_images=5000)
+    dataset = HandwritingDataset('archive/words', max_images=8000)
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    generator = Generator(noise_dim=NOISE_DIM).to(device)
-    discriminator = Discriminator().to(device)
+    generator = DCGenerator(noise_dim=NOISE_DIM).to(device)
+    discriminator = DCDiscriminator().to(device)
+
+    # DCGAN weight initialization
+    generator.apply(weights_init)
+    discriminator.apply(weights_init)
 
     print(f"Generator parameters: {sum(p.numel() for p in generator.parameters()):,}")
     print(f"Discriminator parameters: {sum(p.numel() for p in discriminator.parameters()):,}")
 
-    train_gan(generator, discriminator, dataloader, epochs=EPOCHS, noise_dim=NOISE_DIM)
+    train_dcgan(generator, discriminator, dataloader, epochs=EPOCHS, noise_dim=NOISE_DIM)
 
-    torch.save(generator.state_dict(), "level4_generator.pth")
-    torch.save(discriminator.state_dict(), "level4_discriminator.pth")
+    torch.save(generator.state_dict(), "dcgan_generator.pth")
+    torch.save(discriminator.state_dict(), "dcgan_discriminator.pth")
     print("Models saved!")
