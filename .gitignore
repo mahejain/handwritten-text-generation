@@ -226,3 +226,16 @@ handwriting.ttf
 
 # Dataset
 archive/
+
+# Model weights
+*.pth
+
+# Output images
+output/
+dcgan_epoch_*.png
+level4_epoch_*.png
+level3_output.png
+level2_*.png
+
+# Kaggle outputs
+kaggle_output/
